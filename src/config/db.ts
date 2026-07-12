@@ -1,0 +1,9 @@
+import { PrismaClient } from "@prisma/client";
+import { env } from "./env";
+
+// Single shared Prisma instance across the app.
+const prisma = new PrismaClient({
+  log: env.NODE_ENV === "development" ? ["query", "error", "warn"] : ["error"],
+});
+
+export default prisma;

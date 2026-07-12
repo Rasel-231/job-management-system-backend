@@ -1,0 +1,124 @@
+// ============================================================
+// Prisma schema — "multiple schema" support via PostgreSQL
+// multiSchema preview feature. Models are grouped into logical
+// Postgres schemas (identity, jobs, finance) instead of one
+// monolithic "public" schema — this is what Prisma calls
+// "multi-schema" support.
+// ============================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["identity", "jobs", "finance"]
+}
+
+enum Role {
+  ADMIN
+  USER
+
+  @@schema("identity")
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  BLOCKED
+
+  @@schema("identity")
+}
+
+enum TaskStatus {
+  PENDING
+  APPROVED
+  REJECTED
+
+  @@schema("jobs")
+}
+
+enum TransactionType {
+  EARNING
+  WITHDRAWAL
+
+  @@schema("finance")
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+
+  @@schema("finance")
+}
+
+model User {
+  id           String        @id @default(uuid())
+  name         String
+  email        String        @unique
+  password     String
+  avatarUrl    String?
+  role         Role          @default(USER)
+  status       UserStatus    @default(PENDING)
+  jobs         Job[]         @relation("PostedJobs")
+  tasks        Task[]
+  transactions Transaction[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@schema("identity")
+  @@map("users")
+}
+
+model Job {
+  id                String   @id @default(uuid())
+  title             String
+  description       String
+  reward            Float
+  proofRequirements String
+  imageUrl          String?
+  postedBy          User     @relation("PostedJobs", fields: [postedById], references: [id])
+  postedById        String
+  tasks             Task[]
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([postedById])
+  @@schema("jobs")
+  @@map("jobs")
+}
+
+model Task {
+  id             String     @id @default(uuid())
+  job            Job        @relation(fields: [jobId], references: [id])
+  jobId          String
+  user           User       @relation(fields: [userId], references: [id])
+  userId         String
+  submissionLink String
+  proofFileUrl   String?
+  status         TaskStatus @default(PENDING)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([jobId])
+  @@index([userId])
+  @@schema("jobs")
+  @@map("tasks")
+}
+
+model Transaction {
+  id        String             @id @default(uuid())
+  user      User               @relation(fields: [userId], references: [id])
+  userId    String
+  amount    Float
+  type      TransactionType
+  status    TransactionStatus  @default(PENDING)
+  createdAt DateTime           @default(now())
+
+  @@index([userId])
+  @@schema("finance")
+  @@map("transactions")
+}

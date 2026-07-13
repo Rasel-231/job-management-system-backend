@@ -11,18 +11,17 @@ const accessTokenCookieOptions = {
   httpOnly: true,
   secure: isProd,
   sameSite: "strict" as const,
-  maxAge: 15 * 60 * 1000, // 15 minutes
+  maxAge: 15 * 60 * 1000,
 };
 
 const refreshTokenCookieOptions = {
   httpOnly: true,
   secure: isProd,
   sameSite: "strict" as const,
-  maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+  maxAge: 30 * 24 * 60 * 60 * 1000,
 };
 
-// Non-HttpOnly — readable by Next.js proxy.ts for coarse route redirects.
-// Never trusted as the source of truth; authorize() middleware is.
+
 const roleCookieOptions = {
   httpOnly: false,
   secure: isProd,

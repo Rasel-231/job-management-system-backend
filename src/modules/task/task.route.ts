@@ -8,26 +8,62 @@ import { TaskValidation } from "./task.validation";
 
 const router = Router();
 
-router.post(
-  "/",
+router.get(
+  "/my-tasks",
   authenticate,
-  authorize(Permission.TASK_SUBMIT),
-  upload.single("proofFile"),
-  validateRequest(TaskValidation.createTaskValidationSchema),
-  TaskController.createTask
+  authorize(Permission.TASK_VIEW_OWN),
+  TaskController.getMyTasks
 );
 
-router.get("/my-tasks", authenticate, authorize(Permission.TASK_VIEW_OWN), TaskController.getMyTasks);
-router.get("/", authenticate, authorize(Permission.TASK_VIEW_ALL), TaskController.getAllTasks);
-
-router.patch(
-  "/:id/status",
+router.get(
+  "/job/:jobId/applications",
   authenticate,
   authorize(Permission.TASK_REVIEW),
-  validateRequest(TaskValidation.updateTaskStatusValidationSchema),
-  TaskController.updateTaskStatus
+  TaskController.getJobApplications
 );
 
-router.get("/:id", authenticate, TaskController.getSingleTask); // ownership checked in controller
+router.get("/", authenticate, authorize(Permission.TASK_VIEW_ALL), TaskController.getAllTasks);
+
+router.post(
+  "/apply",
+  authenticate,
+  authorize(Permission.TASK_APPLY),
+  validateRequest(TaskValidation.applyValidationSchema),
+  TaskController.applyForJob
+);
+
+router.post(
+  "/:id/accept",
+  authenticate,
+  authorize(Permission.TASK_REVIEW),
+  TaskController.acceptApplication
+);
+
+router.post(
+  "/:id/complete-step",
+  authenticate,
+  authorize(Permission.TASK_UPDATE_PROGRESS),
+  validateRequest(TaskValidation.updateStepValidationSchema),
+  TaskController.completeStep
+);
+
+router.post(
+  "/:id/submit-proof",
+  authenticate,
+  authorize(Permission.TASK_UPDATE_PROGRESS),
+  upload.single("proofFile"),
+  validateRequest(TaskValidation.submitProofValidationSchema),
+  TaskController.submitProof
+);
+
+router.patch(
+  "/:id/review",
+  authenticate,
+  authorize(Permission.TASK_REVIEW),
+  validateRequest(TaskValidation.reviewTaskValidationSchema),
+  TaskController.reviewTask
+);
+
+router.get("/:id", authenticate, TaskController.getSingleTask);
 
 export const TaskRoutes = router;

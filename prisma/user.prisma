@@ -1,0 +1,70 @@
+// ============================================================
+// user.prisma — User model & authentication enums (identity schema)
+// ============================================================
+
+enum Role {
+  ADMIN
+  USER
+
+  @@schema("identity")
+}
+
+enum AccountType {
+  JOB_SEEKER
+  JOB_POSTER
+  BOTH
+
+  @@schema("identity")
+}
+
+enum AuthProvider {
+  EMAIL
+  GOOGLE
+  FACEBOOK
+
+  @@schema("identity")
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  BLOCKED
+
+  @@schema("identity")
+}
+
+model User {
+  id               String            @id @default(uuid())
+  name             String
+  email            String            @unique
+  password         String?
+  phone            String?
+  avatarUrl        String?
+  bio              String?
+  skillTags        String[]          @default([])
+  role             Role              @default(USER)
+  accountType      AccountType       @default(JOB_SEEKER)
+  authProvider     AuthProvider      @default(EMAIL)
+  googleId         String?           @unique
+  facebookId       String?           @unique
+  status           UserStatus        @default(ACTIVE)
+  isVerified       Boolean           @default(false)
+  isPhoneVerified  Boolean           @default(false)
+  otpCode          String?
+  otpExpiresAt     DateTime?
+  warnings         Int               @default(0)
+  jobs             Job[]             @relation("PostedJobs")
+  tasks            Task[]
+  transactions     Transaction[]
+  likes            JobLike[]
+  comments         JobComment[]
+  verificationRequests VerificationRequest[]
+  withdrawals      Withdrawal[]
+  disputesAsComplainant Dispute[] @relation("DisputeComplainant")
+  disputesAsRespondent  Dispute[] @relation("DisputeRespondent")
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@schema("identity")
+  @@map("users")
+}

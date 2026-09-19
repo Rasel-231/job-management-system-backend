@@ -38,4 +38,15 @@ const updateUserStatus = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
-export const UserController = { getAllUsers, getSingleUser, updateUserStatus };
+const updateUserWarnings = catchAsync(async (req: Request, res: Response) => {
+  const result = await UserService.updateUserWarnings(req.params.id, req.body.action);
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: result.warnings > 0 ? "Warning issued to user" : "Warnings cleared",
+    data: result,
+  });
+});
+
+export const UserController = { getAllUsers, getSingleUser, updateUserStatus, updateUserWarnings };

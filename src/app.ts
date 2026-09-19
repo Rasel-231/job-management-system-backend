@@ -1,15 +1,13 @@
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import express, { Application } from "express";
-import { env } from "./config/env";
+import { env } from "./config/config";
 import router from "./routes";
 import notFound from "./middlewares/notFound.middleware";
 import globalErrorHandler from "./middlewares/error.middleware";
 
 const app: Application = express();
 
-// CORS fixed for a single trusted cross-domain frontend, with credentials
-// enabled so the httpOnly auth cookies are actually sent/received.
 app.use(
   cors({
     origin: env.CLIENT_URL,

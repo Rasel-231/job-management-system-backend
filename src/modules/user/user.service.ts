@@ -11,14 +11,20 @@ const safeUserSelect = {
   id: true,
   name: true,
   email: true,
-  role: true,
-  status: true,
+  phone: true,
   avatarUrl: true,
+  role: true,
+  accountType: true,
+  authProvider: true,
+  status: true,
+  isVerified: true,
+  isPhoneVerified: true,
+  warnings: true,
   createdAt: true,
 } as const;
 
 const getAllUsers = async (query: Record<string, unknown>) => {
-  const filters = pick(query, ["searchTerm", "status", "role"]) as TUserFilters;
+  const filters = pick(query, ["searchTerm", "status", "role", "accountType", "isVerified"]) as TUserFilters;
   const paginationOptions = pick(query, ["page", "limit", "sortBy", "sortOrder"]) as TPaginationOptions;
 
   const { searchTerm, ...restFilters } = filters;
@@ -52,4 +58,13 @@ const updateUserStatus = async (id: string, status: "PENDING" | "ACTIVE" | "BLOC
   return prisma.user.update({ where: { id }, data: { status }, select: safeUserSelect });
 };
 
-export const UserService = { getAllUsers, getSingleUser, updateUserStatus };
+const updateUserWarnings = async (id: string, action: "warn" | "clear") => {
+  const user = await prisma.user.findUnique({ where: { id } });
+  if (!user) throw new AppError(404, "User not found");
+
+  const warnings = action === "warn" ? user.warnings + 1 : 0;
+
+  return prisma.user.update({ where: { id }, data: { warnings }, select: safeUserSelect });
+};
+
+export const UserService = { getAllUsers, getSingleUser, updateUserStatus, updateUserWarnings };

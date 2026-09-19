@@ -1,0 +1,95 @@
+// ============================================================
+// job.prisma — Job, JobStep, JobLike, JobComment & enums (jobs schema)
+// ============================================================
+
+enum JobCategory {
+  WEB_DEVELOPMENT
+  GRAPHIC_DESIGN
+  CONTENT_WRITING
+  DIGITAL_MARKETING
+  VIDEO_EDITING
+  DATA_ENTRY
+  MOBILE_APPS
+  SOCIAL_MEDIA
+  OTHER
+
+  @@schema("jobs")
+}
+
+enum JobStatus {
+  OPEN
+  IN_PROGRESS
+  CLOSED
+  CANCELLED
+
+  @@schema("jobs")
+}
+
+model Job {
+  id                String        @id @default(uuid())
+  title             String
+  description       String
+  requirements      String?
+  proofRequirements String
+  reward            Float
+  category          JobCategory   @default(OTHER)
+  deadline          DateTime?
+  status            JobStatus     @default(OPEN)
+  imageUrl          String?
+  postedBy          User          @relation("PostedJobs", fields: [postedById], references: [id])
+  postedById        String
+  tasks             Task[]
+  steps             JobStep[]
+  likes             JobLike[]
+  comments          JobComment[]
+  disputes          Dispute[]
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([postedById])
+  @@index([category])
+  @@schema("jobs")
+  @@map("jobs")
+}
+
+model JobStep {
+  id          String   @id @default(uuid())
+  job         Job      @relation(fields: [jobId], references: [id])
+  jobId       String
+  title       String
+  description String?
+  order       Int      @default(0)
+  taskSteps   TaskStep[]
+  createdAt   DateTime @default(now())
+
+  @@index([jobId])
+  @@schema("jobs")
+  @@map("job_steps")
+}
+
+model JobLike {
+  id        String   @id @default(uuid())
+  job       Job      @relation(fields: [jobId], references: [id])
+  jobId     String
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  createdAt DateTime @default(now())
+
+  @@unique([jobId, userId])
+  @@schema("jobs")
+  @@map("job_likes")
+}
+
+model JobComment {
+  id        String   @id @default(uuid())
+  job       Job      @relation(fields: [jobId], references: [id])
+  jobId     String
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  content   String
+  createdAt DateTime @default(now())
+
+  @@index([jobId])
+  @@schema("jobs")
+  @@map("job_comments")
+}

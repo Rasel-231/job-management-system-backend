@@ -2,17 +2,68 @@ import { Request, Response } from "express";
 import httpStatus from "http-status";
 import catchAsync from "../../utils/catchAsync";
 import sendResponse from "../../utils/sendResponse";
-import AppError from "../../utils/AppError";
-import { hasPermission, Permission } from "../../config/permissions";
 import { TaskService } from "./task.service";
 
-const createTask = catchAsync(async (req: Request, res: Response) => {
-  const result = await TaskService.createTask(req.user!.userId, req.body, req.file);
+const applyForJob = catchAsync(async (req: Request, res: Response) => {
+  const result = await TaskService.applyForJob(req.user!.userId, req.body);
 
   sendResponse(res, {
     statusCode: httpStatus.CREATED,
     success: true,
-    message: "Task submitted successfully",
+    message: "Application submitted. Awaiting the job poster's acceptance.",
+    data: result,
+  });
+});
+
+const acceptApplication = catchAsync(async (req: Request, res: Response) => {
+  const result = await TaskService.acceptApplication(req.params.id, req.user!.userId, req.user!.role);
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Application accepted — progress tracking unlocked",
+    data: result,
+  });
+});
+
+const completeStep = catchAsync(async (req: Request, res: Response) => {
+  const result = await TaskService.completeStep(req.user!.userId, req.body.stepId);
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: `Step completed — overall progress ${result?.progress ?? 0}%`,
+    data: result,
+  });
+});
+
+const submitProof = catchAsync(async (req: Request, res: Response) => {
+  const result = await TaskService.submitProof(req.user!.userId, req.params.id, req.body, req.file);
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Proof submitted. Waiting for the job poster's approval.",
+    data: result,
+  });
+});
+
+const reviewTask = catchAsync(async (req: Request, res: Response) => {
+  const result = await TaskService.reviewTask(
+    req.params.id,
+    req.user!.userId,
+    req.user!.role,
+    req.body.status,
+    req.body.note
+  );
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message:
+      req.body.status === "APPROVED"
+        ? "Task approved — reward credited to the seeker's wallet"
+        : "Task rejected",
     data: result,
   });
 });
@@ -40,32 +91,40 @@ const getMyTasks = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
-const getSingleTask = catchAsync(async (req: Request, res: Response) => {
-  const task = await TaskService.getSingleTask(req.params.id);
+const getJobApplications = catchAsync(async (req: Request, res: Response) => {
+  const result = await TaskService.getJobApplications(
+    req.params.jobId,
+    req.user!.userId,
+    req.user!.role
+  );
 
-  const isOwner = task.userId === req.user!.userId;
-  const isAdmin = hasPermission(req.user!.role, Permission.TASK_VIEW_ALL);
-  if (!isOwner && !isAdmin) {
-    throw new AppError(403, "You do not have permission to view this task");
-  }
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Applications retrieved successfully",
+    data: result,
+  });
+});
+
+const getSingleTask = catchAsync(async (req: Request, res: Response) => {
+  const result = await TaskService.getSingleTask(req.params.id, req.user!.userId, req.user!.role);
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,
     message: "Task retrieved successfully",
-    data: task,
-  });
-});
-
-const updateTaskStatus = catchAsync(async (req: Request, res: Response) => {
-  const result = await TaskService.updateTaskStatus(req.params.id, req.body.status);
-
-  sendResponse(res, {
-    statusCode: httpStatus.OK,
-    success: true,
-    message: `Task ${result.status.toLowerCase()} successfully`,
     data: result,
   });
 });
 
-export const TaskController = { createTask, getAllTasks, getMyTasks, getSingleTask, updateTaskStatus };
+export const TaskController = {
+  applyForJob,
+  acceptApplication,
+  completeStep,
+  submitProof,
+  reviewTask,
+  getAllTasks,
+  getMyTasks,
+  getJobApplications,
+  getSingleTask,
+};

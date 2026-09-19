@@ -3,7 +3,7 @@ import { ZodError } from "zod";
 import { Prisma } from "@prisma/client";
 import AppError from "../utils/AppError";
 import logger from "../utils/logger";
-import { env } from "../config/env";
+import { env } from "../config/config";
 
 type TErrorSource = { path: string; message: string }[];
 

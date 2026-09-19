@@ -18,4 +18,12 @@ router.patch(
   UserController.updateUserStatus
 );
 
+router.patch(
+  "/:id/warnings",
+  authenticate,
+  authorize(Permission.USER_UPDATE_STATUS),
+  validateRequest(UserValidation.updateWarningsValidationSchema),
+  UserController.updateUserWarnings
+);
+
 export const UserRoutes = router;

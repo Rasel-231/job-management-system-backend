@@ -8,4 +8,10 @@ const updateStatusValidationSchema = z.object({
   }),
 });
 
-export const UserValidation = { updateStatusValidationSchema };
+const updateWarningsValidationSchema = z.object({
+  body: z.object({
+    action: z.enum(["warn", "clear"], { required_error: "Action is required" }),
+  }),
+});
+
+export const UserValidation = { updateStatusValidationSchema, updateWarningsValidationSchema };

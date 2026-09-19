@@ -18,8 +18,36 @@ router.post(
   AuthController.loginUser
 );
 
+router.post(
+  "/social/:provider",
+  validateRequest(AuthValidation.socialLoginValidationSchema),
+  AuthController.socialLogin
+);
+
+router.post(
+  "/otp/request",
+  authenticate,
+  validateRequest(AuthValidation.requestOtpValidationSchema),
+  AuthController.requestOtp
+);
+
+router.post(
+  "/otp/verify",
+  authenticate,
+  validateRequest(AuthValidation.verifyOtpValidationSchema),
+  AuthController.verifyOtp
+);
+
+router.get("/me", authenticate, AuthController.getMe);
+
+router.patch(
+  "/me",
+  authenticate,
+  validateRequest(AuthValidation.updateProfileValidationSchema),
+  AuthController.updateProfile
+);
+
 router.post("/refresh-token", AuthController.refreshToken);
 router.post("/logout", AuthController.logoutUser);
-router.get("/me", authenticate, AuthController.getMe);
 
 export const AuthRoutes = router;

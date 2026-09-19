@@ -1,5 +1,5 @@
 import jwt, { JwtPayload, SignOptions } from "jsonwebtoken";
-import { env } from "../config/env";
+import { env } from "../config/config";
 
 export type TTokenPayload = {
   userId: string;

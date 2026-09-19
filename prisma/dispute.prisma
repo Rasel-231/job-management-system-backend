@@ -1,0 +1,35 @@
+// ============================================================
+// dispute.prisma — Dispute model & enum (jobs schema)
+// ============================================================
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+  REJECTED
+
+  @@schema("jobs")
+}
+
+model Dispute {
+  id            String        @id @default(uuid())
+  job           Job           @relation(fields: [jobId], references: [id])
+  jobId         String
+  task          Task?         @relation(fields: [taskId], references: [id])
+  taskId        String?
+  complainant   User          @relation("DisputeComplainant", fields: [complainantId], references: [id])
+  complainantId String
+  respondent    User          @relation("DisputeRespondent", fields: [respondentId], references: [id])
+  respondentId  String
+  reason        String
+  status        DisputeStatus @default(OPEN)
+  resolution    String?
+  resolvedAt    DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([jobId])
+  @@index([complainantId])
+  @@schema("jobs")
+  @@map("disputes")
+}

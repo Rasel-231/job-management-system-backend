@@ -1,0 +1,64 @@
+// ============================================================
+// task.prisma — Task, TaskStep models & enums (jobs schema)
+// ============================================================
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  SUBMITTED
+  APPROVED
+  REJECTED
+
+  @@schema("jobs")
+}
+
+enum TaskStepStatus {
+  PENDING
+  COMPLETED
+
+  @@schema("jobs")
+}
+
+model Task {
+  id             String     @id @default(uuid())
+  job            Job        @relation(fields: [jobId], references: [id])
+  jobId          String
+  user           User       @relation(fields: [userId], references: [id])
+  userId         String
+  status         TaskStatus @default(PENDING)
+  progress       Int        @default(0)
+  acceptedAt     DateTime?
+  submittedAt    DateTime?
+  approvedAt     DateTime?
+  rejectionNote  String?
+  submissionLink String?
+  proofFileUrl   String?
+  proofNote      String?
+  taskSteps      TaskStep[]
+  disputes       Dispute[]
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([jobId])
+  @@index([userId])
+  @@schema("jobs")
+  @@map("tasks")
+}
+
+model TaskStep {
+  id          String         @id @default(uuid())
+  task        Task           @relation(fields: [taskId], references: [id])
+  taskId      String
+  jobStep     JobStep?       @relation(fields: [jobStepId], references: [id])
+  jobStepId   String?
+  title       String
+  description String?
+  order       Int            @default(0)
+  status      TaskStepStatus @default(PENDING)
+  completedAt DateTime?
+  createdAt   DateTime       @default(now())
+
+  @@index([taskId])
+  @@schema("jobs")
+  @@map("task_steps")
+}

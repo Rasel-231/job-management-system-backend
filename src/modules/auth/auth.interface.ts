@@ -2,6 +2,8 @@ export type TRegisterUser = {
   name: string;
   email: string;
   password: string;
+  phone?: string;
+  accountType?: "JOB_SEEKER" | "JOB_POSTER" | "BOTH";
 };
 
 export type TLoginUser = {
@@ -13,9 +15,17 @@ export type TSafeUser = {
   id: string;
   name: string;
   email: string;
-  role: string;
-  status: string;
+  phone: string | null;
   avatarUrl: string | null;
+  bio: string | null;
+  skillTags: string[];
+  role: string;
+  accountType: string;
+  authProvider: string;
+  status: string;
+  isVerified: boolean;
+  isPhoneVerified: boolean;
+  warnings: number;
 };
 
 export type TAuthTokens = {
@@ -24,3 +34,5 @@ export type TAuthTokens = {
 };
 
 export type TLoginResult = TAuthTokens & { user: TSafeUser };
+
+export type TSocialLoginResult = TLoginResult & { isNewUser: boolean };

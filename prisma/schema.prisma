@@ -56,21 +56,43 @@ enum TransactionStatus {
 }
 
 model User {
-  id           String        @id @default(uuid())
-  name         String
-  email        String        @unique
-  password     String
-  avatarUrl    String?
-  role         Role          @default(USER)
-  status       UserStatus    @default(PENDING)
-  jobs         Job[]         @relation("PostedJobs")
-  tasks        Task[]
-  transactions Transaction[]
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  id            String         @id @default(uuid())
+  name          String
+  email         String         @unique
+  password      String
+  avatarUrl     String?
+  role          Role           @default(USER)
+  status        UserStatus     @default(PENDING)
+  jobs          Job[]          @relation("PostedJobs")
+  tasks         Task[]
+  transactions  Transaction[]
+  refreshTokens RefreshToken[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 
   @@schema("identity")
   @@map("users")
+}
+
+// Hashed refresh tokens persisted server-side. Every refresh rotates the
+// token (revokes the old row, chains to a new one) and logout revokes the
+// current token — stolen tokens are then useless instead of valid forever.
+model RefreshToken {
+  id           String        @id @default(uuid())
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash    String        @unique
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  replacedById String?       @unique
+  replacedBy   RefreshToken? @relation("TokenRotation", fields: [replacedById], references: [id])
+  replacedTokens RefreshToken[] @relation("TokenRotation")
+  createdAt    DateTime      @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@schema("identity")
+  @@map("refresh_tokens")
 }
 
 model Job {

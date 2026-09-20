@@ -2,32 +2,12 @@ import { Request, Response } from "express";
 import httpStatus from "http-status";
 import catchAsync from "../../utils/catchAsync";
 import sendResponse from "../../utils/sendResponse";
-import { env } from "../../config/env";
+import {
+  accessTokenCookieOptions,
+  refreshTokenCookieOptions,
+  roleCookieOptions,
+} from "../../config/cookies";
 import { AuthService } from "./auth.service";
-
-const isProd = env.NODE_ENV === "production";
-
-const accessTokenCookieOptions = {
-  httpOnly: true,
-  secure: isProd,
-  sameSite: "strict" as const,
-  maxAge: 15 * 60 * 1000,
-};
-
-const refreshTokenCookieOptions = {
-  httpOnly: true,
-  secure: isProd,
-  sameSite: "strict" as const,
-  maxAge: 30 * 24 * 60 * 60 * 1000,
-};
-
-
-const roleCookieOptions = {
-  httpOnly: false,
-  secure: isProd,
-  sameSite: "strict" as const,
-  maxAge: 30 * 24 * 60 * 60 * 1000,
-};
 
 const registerUser = catchAsync(async (req: Request, res: Response) => {
   const result = await AuthService.registerUser(req.body);
@@ -65,17 +45,22 @@ const refreshToken = catchAsync(async (req: Request, res: Response) => {
 
   const result = await AuthService.refreshAccessToken(token);
 
-  res.cookie("accessToken", result.accessToken, accessTokenCookieOptions);
+  res
+    .cookie("accessToken", result.accessToken, accessTokenCookieOptions)
+    .cookie("refreshToken", result.refreshToken, refreshTokenCookieOptions)
+    .cookie("role", result.role, roleCookieOptions);
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,
     message: "Access token refreshed",
-    data: { accessToken: result.accessToken },
+    data: { accessToken: result.accessToken, refreshToken: result.refreshToken, role: result.role },
   });
 });
 
-const logoutUser = catchAsync(async (_req: Request, res: Response) => {
+const logoutUser = catchAsync(async (req: Request, res: Response) => {
+  await AuthService.revokeRefreshToken(req.cookies?.refreshToken);
+
   res.clearCookie("accessToken").clearCookie("refreshToken").clearCookie("role");
 
   sendResponse(res, {

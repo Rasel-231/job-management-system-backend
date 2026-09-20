@@ -24,3 +24,5 @@ export type TAuthTokens = {
 };
 
 export type TLoginResult = TAuthTokens & { user: TSafeUser };
+
+export type TRefreshResult = TAuthTokens & { role: string };

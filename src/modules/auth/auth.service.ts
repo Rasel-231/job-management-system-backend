@@ -1,8 +1,14 @@
+import jwt, { JwtPayload } from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import prisma from "../../config/db";
 import AppError from "../../utils/AppError";
-import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from "../../utils/jwt";
-import { TLoginResult, TLoginUser, TRegisterUser, TSafeUser } from "./auth.interface";
+import { hashToken } from "../../utils/tokenHash";
+import {
+  generateAccessToken,
+  generateRefreshToken,
+  verifyRefreshToken,
+} from "../../utils/jwt";
+import { TLoginResult, TLoginUser, TRefreshResult, TRegisterUser, TSafeUser } from "./auth.interface";
 
 const safeUserSelect = {
   id: true,
@@ -12,6 +18,22 @@ const safeUserSelect = {
   status: true,
   avatarUrl: true,
 } as const;
+
+const tokenExpiryFromJwt = (token: string): Date => {
+  const { exp } = jwt.decode(token) as JwtPayload;
+  if (!exp) throw new AppError(500, "Could not determine token expiry");
+  return new Date(exp * 1000);
+};
+
+const persistRefreshToken = async (userId: string, refreshToken: string): Promise<void> => {
+  await prisma.refreshToken.create({
+    data: {
+      userId,
+      tokenHash: hashToken(refreshToken),
+      expiresAt: tokenExpiryFromJwt(refreshToken),
+    },
+  });
+};
 
 const registerUser = async (payload: TRegisterUser): Promise<TSafeUser> => {
   const existingUser = await prisma.user.findUnique({ where: { email: payload.email } });
@@ -48,6 +70,8 @@ const loginUser = async (payload: TLoginUser): Promise<TLoginResult> => {
   const accessToken = generateAccessToken(tokenPayload);
   const refreshToken = generateRefreshToken(tokenPayload);
 
+  await persistRefreshToken(user.id, refreshToken);
+
   return {
     accessToken,
     refreshToken,
@@ -62,7 +86,7 @@ const loginUser = async (payload: TLoginUser): Promise<TLoginResult> => {
   };
 };
 
-const refreshAccessToken = async (token: string): Promise<{ accessToken: string; role: string }> => {
+const refreshAccessToken = async (token: string): Promise<TRefreshResult> => {
   let decoded;
   try {
     decoded = verifyRefreshToken(token);
@@ -70,13 +94,61 @@ const refreshAccessToken = async (token: string): Promise<{ accessToken: string;
     throw new AppError(401, "Invalid or expired refresh token");
   }
 
+  const stored = await prisma.refreshToken.findUnique({
+    where: { tokenHash: hashToken(token) },
+  });
+
+  if (
+    !stored ||
+    stored.revokedAt !== null ||
+    stored.expiresAt.getTime() <= Date.now() ||
+    stored.userId !== decoded.userId
+  ) {
+    throw new AppError(401, "Refresh token is no longer valid");
+  }
+
   const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
   if (!user || user.status !== "ACTIVE") {
+    await prisma.refreshToken.updateMany({
+      where: { userId: decoded.userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
     throw new AppError(401, "User no longer active");
   }
 
-  const accessToken = generateAccessToken({ userId: user.id, role: user.role });
-  return { accessToken, role: user.role };
+  // Rotate: revoke the presented token and chain it to a fresh one. If a
+  // stolen token is replayed after a legitimate rotation it is already
+  // revoked, so it can never mint new access tokens.
+  const newRefreshToken = generateRefreshToken({ userId: user.id, role: user.role });
+
+  await prisma.$transaction(async (tx) => {
+    const replacement = await tx.refreshToken.create({
+      data: {
+        userId: user.id,
+        tokenHash: hashToken(newRefreshToken),
+        expiresAt: tokenExpiryFromJwt(newRefreshToken),
+      },
+    });
+    await tx.refreshToken.update({
+      where: { id: stored.id },
+      data: { revokedAt: new Date(), replacedById: replacement.id },
+    });
+  });
+
+  return {
+    accessToken: generateAccessToken({ userId: user.id, role: user.role }),
+    refreshToken: newRefreshToken,
+    role: user.role,
+  };
+};
+
+const revokeRefreshToken = async (token?: string): Promise<void> => {
+  if (!token) return;
+
+  await prisma.refreshToken.updateMany({
+    where: { tokenHash: hashToken(token), revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
 };
 
 const getMe = async (userId: string): Promise<TSafeUser> => {
@@ -89,5 +161,6 @@ export const AuthService = {
   registerUser,
   loginUser,
   refreshAccessToken,
+  revokeRefreshToken,
   getMe,
 };

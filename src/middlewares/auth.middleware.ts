@@ -7,8 +7,7 @@ import { Permission, hasPermission } from "../config/permissions";
 export const authenticate = catchAsync(
   async (req: Request, _res: Response, next: NextFunction) => {
 
-    const cookieToken = req.cookies?.accessToken;
-    const token = cookieToken
+    const token = req.cookies?.accessToken as string | undefined;
 
     if (!token) {
       throw new AppError(401, "You are not allowed to access this resource. Please log in.");

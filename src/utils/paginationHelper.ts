@@ -2,7 +2,7 @@ export type TPaginationOptions = {
   page?: number | string;
   limit?: number | string;
   sortBy?: string;
-  sortOrder?: "asc" | "desc";
+  sortOrder?: string;
 };
 
 export type TCalculatedPagination = {

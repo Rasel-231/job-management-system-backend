@@ -1,5 +1,5 @@
 import app from "./app";
-import { env } from "./config/env";
+import { env } from "./config/config";
 import logger from "./utils/logger";
 import prisma from "./config/db";
 

@@ -1,5 +1,5 @@
 import rateLimit from "express-rate-limit";
-import { env } from "../config/env";
+import { env } from "../config/config";
 
 const isProd = env.NODE_ENV === "production";
 

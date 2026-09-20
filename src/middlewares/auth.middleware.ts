@@ -6,8 +6,7 @@ import { Permission, hasPermission } from "../config/permissions";
 
 export const authenticate = catchAsync(
   async (req: Request, _res: Response, next: NextFunction) => {
-
-    const token = req.cookies?.accessToken as string | undefined;
+const token = req.cookies?.accessToken as string | undefined;
 
     if (!token) {
       throw new AppError(401, "You are not allowed to access this resource. Please log in.");
@@ -34,3 +33,24 @@ export const authorize = (...permissions: Permission[]) => {
     next();
   };
 };
+
+// Public routes that get slightly richer if a user is logged in (e.g. the
+// feed marks which posts you liked). Never throws — anonymous stays anonymous.
+export const optionalAuthenticate = catchAsync(
+  async (req: Request, _res: Response, next: NextFunction) => {
+    const token = req.cookies?.accessToken;
+    if (!token) {
+      next();
+      return;
+    }
+
+    try {
+      const decoded = verifyAccessToken(token);
+      req.user = { userId: decoded.userId, role: decoded.role };
+    } catch {
+      // stale/expired cookie — treat as anonymous
+    }
+
+    next();
+  }
+);

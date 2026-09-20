@@ -1,5 +1,5 @@
 import type { CookieOptions } from "express";
-import { env } from "./env";
+import { env } from "./config";
 
 // Centralized cookie policy — single source of truth for auth cookies so the
 // security attributes (httpOnly/sameSite/secure) are never drifted per route.

@@ -7,8 +7,9 @@
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev",
+    "prisma:merge": "node scripts/merge-prisma-schema.cjs",
+    "prisma:generate": "npm run prisma:merge && prisma generate",
+    "prisma:migrate": "npm run prisma:merge && prisma migrate dev",
     "test": "jest"
   },
   "jest": {

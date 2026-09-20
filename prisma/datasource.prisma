@@ -1,0 +1,15 @@
+// ============================================================
+// datasource.prisma — connection & client generator
+// Merged into prisma/schema.prisma by scripts/merge-prisma-schema.cjs
+// ============================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["identity", "jobs", "finance"]
+}

@@ -2,7 +2,7 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import express, { Application } from "express";
 import helmet from "helmet";
-import { env } from "./config/env";
+import { env } from "./config/config";
 import prisma from "./config/db";
 import router from "./routes";
 import requestId from "./middlewares/requestId.middleware";
@@ -12,8 +12,6 @@ import globalErrorHandler from "./middlewares/error.middleware";
 
 const app: Application = express();
 
-// Behind a reverse proxy (production) so secure cookies and IP-based rate
-// limiting see the real client instead of the proxy address.
 app.set("trust proxy", env.NODE_ENV === "production" ? 1 : false);
 
 app.use(requestId);

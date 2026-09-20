@@ -3,7 +3,11 @@ export type TTaskFilters = {
   jobId?: string;
 };
 
-export type TCreateTaskPayload = {
+export type TApplyToJobPayload = {
   jobId: string;
-  submissionLink: string;
+};
+
+export type TSubmitProofPayload = {
+  submissionLink?: string;
+  proofNote?: string;
 };

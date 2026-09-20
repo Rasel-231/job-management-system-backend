@@ -9,30 +9,93 @@ import {
 } from "../../config/cookies";
 import { AuthService } from "./auth.service";
 
+const attachAuthCookies = (
+  res: Response,
+  accessToken: string,
+  refreshToken: string,
+  role: string
+): void => {
+  res
+    .cookie("accessToken", accessToken, accessTokenCookieOptions)
+    .cookie("refreshToken", refreshToken, refreshTokenCookieOptions)
+    .cookie("role", role, roleCookieOptions);
+};
+
 const registerUser = catchAsync(async (req: Request, res: Response) => {
   const result = await AuthService.registerUser(req.body);
+
+  attachAuthCookies(res, result.accessToken, result.refreshToken, result.user.role);
 
   sendResponse(res, {
     statusCode: httpStatus.CREATED,
     success: true,
-    message: "Registered successfully. Awaiting admin approval.",
-    data: result,
+    message: "Registered successfully. Welcome!",
+    data: { accessToken: result.accessToken, user: result.user },
   });
 });
 
 const loginUser = catchAsync(async (req: Request, res: Response) => {
   const result = await AuthService.loginUser(req.body);
 
-  res
-    .cookie("accessToken", result.accessToken, accessTokenCookieOptions)
-    .cookie("refreshToken", result.refreshToken, refreshTokenCookieOptions)
-    .cookie("role", result.user.role, roleCookieOptions);
+  attachAuthCookies(res, result.accessToken, result.refreshToken, result.user.role);
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,
     message: "Logged in successfully",
     data: { accessToken: result.accessToken, user: result.user },
+  });
+});
+
+const socialLogin = catchAsync(async (req: Request, res: Response) => {
+  const provider = req.params.provider.toUpperCase() === "GOOGLE" ? "GOOGLE" : "FACEBOOK";
+  const { token, accountType } = req.body as { token: string; accountType?: "JOB_SEEKER" | "JOB_POSTER" | "BOTH" };
+
+  const profile = await AuthService.verifySocialToken(provider, token);
+  const result = await AuthService.socialLogin(profile, accountType);
+
+  attachAuthCookies(res, result.accessToken, result.refreshToken, result.user.role);
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Logged in successfully",
+    data: { accessToken: result.accessToken, user: result.user, isNewUser: result.isNewUser },
+  });
+});
+
+const requestOtp = catchAsync(async (req: Request, res: Response) => {
+  const { phone } = req.body as { phone: string };
+  const result = await AuthService.requestOtp(req.user!.userId, phone);
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: result.message,
+    data: result,
+  });
+});
+
+const verifyOtp = catchAsync(async (req: Request, res: Response) => {
+  const { phone, code } = req.body as { phone: string; code: string };
+  const result = await AuthService.verifyOtp(req.user!.userId, phone, code);
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Phone verified successfully",
+    data: result,
+  });
+});
+
+const updateProfile = catchAsync(async (req: Request, res: Response) => {
+  const result = await AuthService.updateProfile(req.user!.userId, req.body);
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Profile updated successfully",
+    data: result,
   });
 });
 
@@ -85,6 +148,10 @@ const getMe = catchAsync(async (req: Request, res: Response) => {
 export const AuthController = {
   registerUser,
   loginUser,
+  socialLogin,
+  requestOtp,
+  verifyOtp,
+  updateProfile,
   refreshToken,
   logoutUser,
   getMe,

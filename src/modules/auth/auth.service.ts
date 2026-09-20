@@ -8,16 +8,62 @@ import {
   generateRefreshToken,
   verifyRefreshToken,
 } from "../../utils/jwt";
-import { TLoginResult, TLoginUser, TRefreshResult, TRegisterUser, TSafeUser } from "./auth.interface";
+import { generateOtp, isOtpValid } from "../../utils/otp";
+import { verifyGoogleToken, verifyFacebookToken, TSocialProfile } from "../../utils/socialAuth";
+import {
+  TLoginResult,
+  TLoginUser,
+  TRefreshResult,
+  TRegisterUser,
+  TSafeUser,
+  TSocialLoginResult,
+} from "./auth.interface";
 
 const safeUserSelect = {
   id: true,
   name: true,
   email: true,
-  role: true,
-  status: true,
+  phone: true,
   avatarUrl: true,
+  bio: true,
+  skillTags: true,
+  role: true,
+  accountType: true,
+  authProvider: true,
+  status: true,
+  isVerified: true,
+  isPhoneVerified: true,
+  warnings: true,
 } as const;
+
+const buildAuthPayload = async (user: TSafeUser): Promise<TLoginResult> => {
+  const tokenPayload = { userId: user.id, role: user.role };
+  const accessToken = generateAccessToken(tokenPayload);
+  const refreshToken = generateRefreshToken(tokenPayload);
+  await persistRefreshToken(user.id, refreshToken);
+  return { accessToken, refreshToken, user };
+};
+
+const toSafeUser = (user: {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  avatarUrl: string | null;
+  bio: string | null;
+  skillTags: string[];
+  role: string;
+  accountType: string;
+  authProvider: string;
+  status: string;
+  isVerified: boolean;
+  isPhoneVerified: boolean;
+  password: string | null;
+  warnings: number;
+}): TSafeUser => {
+  const { password: _pw, ...rest } = user;
+  return rest as TSafeUser;
+};
 
 const tokenExpiryFromJwt = (token: string): Date => {
   const { exp } = jwt.decode(token) as JwtPayload;
@@ -35,7 +81,7 @@ const persistRefreshToken = async (userId: string, refreshToken: string): Promis
   });
 };
 
-const registerUser = async (payload: TRegisterUser): Promise<TSafeUser> => {
+const registerUser = async (payload: TRegisterUser): Promise<TLoginResult> => {
   const existingUser = await prisma.user.findUnique({ where: { email: payload.email } });
 
   if (existingUser) {
@@ -49,41 +95,122 @@ const registerUser = async (payload: TRegisterUser): Promise<TSafeUser> => {
       name: payload.name,
       email: payload.email,
       password: hashedPassword,
+      phone: payload.phone ?? null,
+      accountType: payload.accountType ?? "JOB_SEEKER",
+      status: "ACTIVE",
     },
-    select: safeUserSelect,
+    select: { ...safeUserSelect, password: true },
   });
 
-  return user;
+  return buildAuthPayload(toSafeUser(user));
 };
 
 const loginUser = async (payload: TLoginUser): Promise<TLoginResult> => {
-  const user = await prisma.user.findUnique({ where: { email: payload.email } });
+  const user = await prisma.user.findUnique({
+    where: { email: payload.email },
+    select: { ...safeUserSelect, password: true },
+  });
 
   if (!user) throw new AppError(404, "No user found with this email");
   if (user.status === "PENDING") throw new AppError(403, "Your account is pending admin approval");
   if (user.status === "BLOCKED") throw new AppError(403, "Your account has been blocked");
 
-  const isPasswordValid = await bcrypt.compare(payload.password, user.password);
+  const isPasswordValid = await bcrypt.compare(payload.password, user.password as string);
   if (!isPasswordValid) throw new AppError(401, "Incorrect password");
 
-  const tokenPayload = { userId: user.id, role: user.role };
-  const accessToken = generateAccessToken(tokenPayload);
-  const refreshToken = generateRefreshToken(tokenPayload);
+  return buildAuthPayload(toSafeUser(user));
+};
 
-  await persistRefreshToken(user.id, refreshToken);
+const socialLogin = async (
+  profile: TSocialProfile,
+  accountType?: "JOB_SEEKER" | "JOB_POSTER" | "BOTH"
+): Promise<TSocialLoginResult> => {
+  const providerField = profile.provider === "GOOGLE" ? "googleId" : "facebookId";
+
+  let user = await prisma.user.findFirst({
+    where: {
+      OR: [
+        { [providerField]: profile.providerId },
+        ...(profile.email ? [{ email: profile.email }] : []),
+      ],
+    },
+  });
+
+  let isNewUser = false;
+
+  if (user) {
+    // Link the social account if it was previously email-only.
+    if (!user.googleId && !user.facebookId) {
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: { [providerField]: profile.providerId, authProvider: profile.provider },
+      });
+    }
+  } else {
+    isNewUser = true;
+    if (!profile.email) {
+      throw new AppError(400, `${profile.provider} account has no verified email — cannot register`);
+    }
+    user = await prisma.user.create({
+      data: {
+        name: profile.name,
+        email: profile.email,
+        avatarUrl: profile.avatarUrl,
+        googleId: profile.provider === "GOOGLE" ? profile.providerId : undefined,
+        facebookId: profile.provider === "FACEBOOK" ? profile.providerId : undefined,
+        authProvider: profile.provider,
+        accountType: accountType ?? "JOB_SEEKER",
+        status: "ACTIVE",
+      },
+    });
+  }
+
+  if (user.status === "BLOCKED") throw new AppError(403, "Your account has been blocked");
+
+  const result = await buildAuthPayload(toSafeUser(user));
+  return { ...result, isNewUser };
+};
+
+const requestOtp = async (userId: string, phone: string) => {
+  const code = generateOtp();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { phone, otpCode: code, otpExpiresAt: expiresAt },
+  });
+
+  // Dev mode: log + return the code so the flow is testable without an SMS gateway.
+  const isConsole = process.env.OTP_PROVIDER !== "production" && process.env.OTP_PROVIDER !== "twilio";
+  console.info(`[OTP] ${phone} -> ${code} (expires ${expiresAt.toISOString()})`);
 
   return {
-    accessToken,
-    refreshToken,
-    user: {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      status: user.status,
-      avatarUrl: user.avatarUrl,
-    },
+    message: "OTP sent to your phone",
+    devOtp: isConsole ? code : undefined,
   };
+};
+
+const verifyOtp = async (userId: string, phone: string, code: string) => {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new AppError(404, "User not found");
+  if (user.phone !== phone) throw new AppError(400, "Phone number does not match your account");
+
+  if (!isOtpValid(code, user.otpCode as string, user.otpExpiresAt)) {
+    throw new AppError(400, "Invalid or expired OTP");
+  }
+
+  const updated = await prisma.user.update({
+    where: { id: userId },
+    data: {
+      isPhoneVerified: true,
+      isVerified: true,
+      otpCode: null,
+      otpExpiresAt: null,
+    },
+    select: safeUserSelect,
+  });
+
+  return updated;
 };
 
 const refreshAccessToken = async (token: string): Promise<TRefreshResult> => {
@@ -152,15 +279,48 @@ const revokeRefreshToken = async (token?: string): Promise<void> => {
 };
 
 const getMe = async (userId: string): Promise<TSafeUser> => {
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: safeUserSelect });
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { ...safeUserSelect, password: true },
+  });
   if (!user) throw new AppError(404, "User not found");
-  return user;
+  return toSafeUser(user);
+};
+
+const updateProfile = async (
+  userId: string,
+  payload: Partial<TRegisterUser> & { bio?: string; skillTags?: string[]; avatarUrl?: string }
+): Promise<TSafeUser> => {
+  const updated = await prisma.user.update({
+    where: { id: userId },
+    data: {
+      ...(payload.name && { name: payload.name }),
+      ...(payload.bio && { bio: payload.bio }),
+      ...(payload.skillTags && { skillTags: payload.skillTags }),
+      ...(payload.avatarUrl && { avatarUrl: payload.avatarUrl }),
+      ...(payload.phone && { phone: payload.phone }),
+      ...(payload.accountType && { accountType: payload.accountType }),
+    },
+    select: safeUserSelect,
+  });
+
+  return updated;
+};
+
+const verifySocialToken = (provider: "GOOGLE" | "FACEBOOK", token: string): Promise<TSocialProfile> => {
+  if (provider === "GOOGLE") return verifyGoogleToken(token);
+  return verifyFacebookToken(token);
 };
 
 export const AuthService = {
   registerUser,
   loginUser,
+  socialLogin,
+  verifySocialToken,
+  requestOtp,
+  verifyOtp,
   refreshAccessToken,
   revokeRefreshToken,
   getMe,
+  updateProfile,
 };

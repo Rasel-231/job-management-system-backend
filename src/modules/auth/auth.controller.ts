@@ -6,6 +6,7 @@ import {
   accessTokenCookieOptions,
   refreshTokenCookieOptions,
   roleCookieOptions,
+  clearAuthCookies,
 } from "../../config/cookies";
 import { AuthService } from "./auth.service";
 
@@ -102,29 +103,43 @@ const updateProfile = catchAsync(async (req: Request, res: Response) => {
 const refreshToken = catchAsync(async (req: Request, res: Response) => {
   const token = req.cookies?.refreshToken as string | undefined;
   if (!token) {
+    clearAuthCookies(res);
     res.status(httpStatus.UNAUTHORIZED).json({ success: false, message: "Refresh token missing" });
     return;
   }
 
-  const result = await AuthService.refreshAccessToken(token);
+  try {
+    const result = await AuthService.refreshAccessToken(token);
 
-  res
-    .cookie("accessToken", result.accessToken, accessTokenCookieOptions)
-    .cookie("refreshToken", result.refreshToken, refreshTokenCookieOptions)
-    .cookie("role", result.role, roleCookieOptions);
+    res
+      .cookie("accessToken", result.accessToken, accessTokenCookieOptions)
+      .cookie("refreshToken", result.refreshToken, refreshTokenCookieOptions)
+      .cookie("role", result.role, roleCookieOptions);
 
-  sendResponse(res, {
-    statusCode: httpStatus.OK,
-    success: true,
-    message: "Access token refreshed",
-    data: { accessToken: result.accessToken, refreshToken: result.refreshToken, role: result.role },
-  });
+    sendResponse(res, {
+      statusCode: httpStatus.OK,
+      success: true,
+      message: "Access token refreshed",
+      data: { accessToken: result.accessToken, refreshToken: result.refreshToken, role: result.role },
+    });
+  } catch (error) {
+    // A failed refresh means the presented refreshToken is dead (revoked,
+    // expired, replayed, or the user is no longer active). Delete the auth
+    // cookies so the browser doesn't keep "authenticated" cookies that the
+    // middleware turns into an endless /login ↔ protected-page redirect loop.
+    clearAuthCookies(res);
+    throw error;
+  }
 });
 
 const logoutUser = catchAsync(async (req: Request, res: Response) => {
-  await AuthService.revokeRefreshToken(req.cookies?.refreshToken);
+  try {
+    await AuthService.revokeRefreshToken(req.cookies?.refreshToken);
+  } catch {
+    // ignore revocation failure — the client must be signed out regardless
+  }
 
-  res.clearCookie("accessToken").clearCookie("refreshToken").clearCookie("role");
+  clearAuthCookies(res);
 
   sendResponse(res, {
     statusCode: httpStatus.OK,

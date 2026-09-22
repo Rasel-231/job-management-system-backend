@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from "express";
 import { ZodError } from "zod";
 import { JsonWebTokenError, TokenExpiredError } from "jsonwebtoken";
-import { Prisma } from "@prisma/client";
+import { Prisma } from "../generated/prisma/client";
 import AppError from "../utils/AppError";
 import logger from "../utils/logger";
 import { env } from "../config/config";

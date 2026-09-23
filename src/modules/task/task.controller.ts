@@ -81,13 +81,14 @@ const getAllTasks = catchAsync(async (req: Request, res: Response) => {
 });
 
 const getMyTasks = catchAsync(async (req: Request, res: Response) => {
-  const result = await TaskService.getMyTasks(req.user!.userId);
+  const result = await TaskService.getMyTasks(req.user!.userId, req.query);
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,
     message: "Your tasks retrieved successfully",
-    data: result,
+    meta: result.meta,
+    data: result.data,
   });
 });
 
@@ -95,14 +96,16 @@ const getJobApplications = catchAsync(async (req: Request, res: Response) => {
   const result = await TaskService.getJobApplications(
     req.params.jobId,
     req.user!.userId,
-    req.user!.role
+    req.user!.role,
+    req.query
   );
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,
     message: "Applications retrieved successfully",
-    data: result,
+    meta: result.meta,
+    data: result.data,
   });
 });
 

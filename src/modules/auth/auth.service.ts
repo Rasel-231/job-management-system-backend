@@ -8,7 +8,7 @@ import {
   generateRefreshToken,
   verifyRefreshToken,
 } from "../../utils/jwt";
-import { generateOtp, isOtpValid } from "../../utils/otp";
+import { generateOtp, hashOtp, isOtpValid } from "../../utils/otp";
 import { verifyGoogleToken, verifyFacebookToken, TSocialProfile } from "../../utils/socialAuth";
 import {
   TLoginResult,
@@ -35,6 +35,10 @@ const safeUserSelect = {
   isPhoneVerified: true,
   warnings: true,
 } as const;
+
+// Burned once at boot so the "user not found" path still runs a bcrypt
+// comparison — otherwise login timing leaks whether an email is registered.
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync("timing-equalizer-dummy-password", 10);
 
 const buildAuthPayload = async (user: TSafeUser): Promise<TLoginResult> => {
   const tokenPayload = { userId: user.id, role: user.role };
@@ -111,12 +115,15 @@ const loginUser = async (payload: TLoginUser): Promise<TLoginResult> => {
     select: { ...safeUserSelect, password: true },
   });
 
-  if (!user) throw new AppError(404, "No user found with this email");
+  if (!user) {
+    await bcrypt.compare(payload.password, DUMMY_PASSWORD_HASH);
+    throw new AppError(401, "Incorrect email or password");
+  }
   if (user.status === "PENDING") throw new AppError(403, "Your account is pending admin approval");
   if (user.status === "BLOCKED") throw new AppError(403, "Your account has been blocked");
 
   const isPasswordValid = await bcrypt.compare(payload.password, user.password as string);
-  if (!isPasswordValid) throw new AppError(401, "Incorrect password");
+  if (!isPasswordValid) throw new AppError(401, "Incorrect email or password");
 
   return buildAuthPayload(toSafeUser(user));
 };
@@ -177,7 +184,7 @@ const requestOtp = async (userId: string, phone: string) => {
 
   await prisma.user.update({
     where: { id: userId },
-    data: { phone, otpCode: code, otpExpiresAt: expiresAt },
+    data: { phone, otpCode: hashOtp(code), otpExpiresAt: expiresAt },
   });
 
   // Dev mode: log + return the code so the flow is testable without an SMS gateway.

@@ -1,10 +1,17 @@
 import { z } from "zod";
 
+// Minimum viable hardening: 8+ chars with at least one lowercase, one uppercase
+// and one digit. Kept deliberately simple so the frontend can mirror it exactly.
+export const passwordSchema = z
+  .string({ required_error: "Password is required" })
+  .min(8, "Password must be at least 8 characters")
+  .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/, "Password must contain a lowercase letter, an uppercase letter and a number");
+
 const registerValidationSchema = z.object({
   body: z.object({
     name: z.string({ required_error: "Name is required" }).min(2),
     email: z.string({ required_error: "Email is required" }).email(),
-    password: z.string({ required_error: "Password is required" }).min(6),
+    password: passwordSchema,
     phone: z.string().optional(),
     accountType: z.enum(["JOB_SEEKER", "JOB_POSTER", "BOTH"]).optional(),
   }),

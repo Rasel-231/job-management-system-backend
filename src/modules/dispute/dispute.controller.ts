@@ -16,13 +16,14 @@ const createDispute = catchAsync(async (req: Request, res: Response) => {
 });
 
 const getMyDisputes = catchAsync(async (req: Request, res: Response) => {
-  const result = await DisputeService.getMyDisputes(req.user!.userId);
+  const result = await DisputeService.getMyDisputes(req.user!.userId, req.query);
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,
     message: "Disputes retrieved successfully",
-    data: result,
+    meta: result.meta,
+    data: result.data,
   });
 });
 

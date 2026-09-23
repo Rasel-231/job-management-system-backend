@@ -17,9 +17,9 @@ model Dispute {
   jobId         String
   task          Task?         @relation(fields: [taskId], references: [id])
   taskId        String?
-  complainant   User          @relation("DisputeComplainant", fields: [complainantId], references: [id])
+  complainant   User          @relation("DisputeComplainant", fields: [complainantId], references: [id], onDelete: Cascade)
   complainantId String
-  respondent    User          @relation("DisputeRespondent", fields: [respondentId], references: [id])
+  respondent    User          @relation("DisputeRespondent", fields: [respondentId], references: [id], onDelete: Cascade)
   respondentId  String
   reason        String
   status        DisputeStatus @default(OPEN)

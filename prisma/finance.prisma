@@ -36,7 +36,7 @@ enum WithdrawalStatus {
 
 model Transaction {
   id        String             @id @default(uuid())
-  user      User               @relation(fields: [userId], references: [id])
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId    String
   amount    Float
   type      TransactionType
@@ -51,7 +51,7 @@ model Transaction {
 
 model Withdrawal {
   id            String           @id @default(uuid())
-  user          User             @relation(fields: [userId], references: [id])
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId        String
   amount        Float
   method        WithdrawalMethod

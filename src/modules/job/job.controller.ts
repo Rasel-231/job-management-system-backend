@@ -103,13 +103,14 @@ const getComments = catchAsync(async (req: Request, res: Response) => {
 });
 
 const getMyJobs = catchAsync(async (req: Request, res: Response) => {
-  const result = await JobService.getMyJobs(req.user!.userId);
+  const result = await JobService.getMyJobs(req.user!.userId, req.query);
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,
     message: "Your posted jobs retrieved successfully",
-    data: result,
+    meta: result.meta,
+    data: result.data,
   });
 });
 

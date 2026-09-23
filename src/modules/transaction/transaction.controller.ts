@@ -17,7 +17,7 @@ const getAllTransactions = catchAsync(async (req: Request, res: Response) => {
 });
 
 const getMyEarningsSummary = catchAsync(async (req: Request, res: Response) => {
-  const result = await TransactionService.getMyEarningsSummary(req.user!.userId);
+  const result = await TransactionService.getMyEarningsSummary(req.user!.userId, req.query);
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
@@ -39,13 +39,14 @@ const requestWithdrawal = catchAsync(async (req: Request, res: Response) => {
 });
 
 const getMyWithdrawals = catchAsync(async (req: Request, res: Response) => {
-  const result = await TransactionService.getMyWithdrawals(req.user!.userId);
+  const result = await TransactionService.getMyWithdrawals(req.user!.userId, req.query);
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,
     message: "Withdrawals retrieved successfully",
-    data: result,
+    meta: result.meta,
+    data: result.data,
   });
 });
 

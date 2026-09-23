@@ -40,21 +40,39 @@ const computeWallet = (transactions: { type: string; status: string; amount: num
   return { totalEarnings, totalWithdrawn, availableBalance: totalEarnings - totalWithdrawn };
 };
 
-const getMyEarningsSummary = async (userId: string) => {
-  const [transactions, withdrawals] = await Promise.all([
-    prisma.transaction.findMany({ where: { userId }, orderBy: { createdAt: "desc" } }),
-    prisma.withdrawal.findMany({ where: { userId }, orderBy: { createdAt: "desc" } }),
+// Wallet totals are now computed by the DB (aggregates) instead of pulling
+// every ledger row into memory — O(1) regardless of transaction volume.
+// The returned history/withdrawals lists are capped pageable windows.
+const getMyEarningsSummary = async (userId: string, query: Record<string, unknown>) => {
+  const paginationOptions = pick(query, ["page", "limit"]) as TPaginationOptions;
+  const computedPagination = calculatePagination(paginationOptions);
+  const limit = Math.min(Math.max(computedPagination.limit, 1), 200);
+
+  const [earnings, withdrawn, pendingWithdrawals, transactions, withdrawals] = await Promise.all([
+    prisma.transaction.aggregate({
+      where: { userId, type: "EARNING", status: "COMPLETED" },
+      _sum: { amount: true },
+    }),
+    prisma.transaction.aggregate({
+      where: { userId, type: "WITHDRAWAL", status: "COMPLETED" },
+      _sum: { amount: true },
+    }),
+    prisma.withdrawal.aggregate({
+      where: { userId, status: "PENDING" },
+      _sum: { amount: true },
+    }),
+    prisma.transaction.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: limit }),
+    prisma.withdrawal.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: limit }),
   ]);
 
-  const { totalEarnings, totalWithdrawn, availableBalance } = computeWallet(transactions);
+  const totalEarnings = earnings._sum.amount ?? 0;
+  const totalWithdrawn = withdrawn._sum.amount ?? 0;
 
   return {
     totalEarnings,
     totalWithdrawn,
-    availableBalance,
-    pendingWithdrawals: withdrawals
-      .filter((w) => w.status === "PENDING")
-      .reduce((sum, w) => sum + w.amount, 0),
+    availableBalance: totalEarnings - totalWithdrawn,
+    pendingWithdrawals: pendingWithdrawals._sum.amount ?? 0,
     history: transactions,
     withdrawals,
   };
@@ -86,8 +104,16 @@ const requestWithdrawal = async (userId: string, payload: TCreateWithdrawalPaylo
   });
 };
 
-const getMyWithdrawals = async (userId: string) => {
-  return prisma.withdrawal.findMany({ where: { userId }, orderBy: { createdAt: "desc" } });
+const getMyWithdrawals = async (userId: string, query: Record<string, unknown>) => {
+  const { page, limit, skip } = calculatePagination(pick(query, ["page", "limit"]) as TPaginationOptions);
+  const where = { userId };
+
+  const [withdrawals, total] = await Promise.all([
+    prisma.withdrawal.findMany({ where, orderBy: { createdAt: "desc" }, skip, take: limit }),
+    prisma.withdrawal.count({ where }),
+  ]);
+
+  return { meta: buildMeta(page, limit, total), data: withdrawals };
 };
 
 const getAllWithdrawals = async (query: Record<string, unknown>) => {

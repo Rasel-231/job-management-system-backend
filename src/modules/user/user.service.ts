@@ -67,4 +67,57 @@ const updateUserWarnings = async (id: string, action: "warn" | "clear") => {
   return prisma.user.update({ where: { id }, data: { warnings }, select: safeUserSelect });
 };
 
-export const UserService = { getAllUsers, getSingleUser, updateUserStatus, updateUserWarnings };
+const updateUser = async (
+  id: string,
+  payload: {
+    name?: string;
+    email?: string;
+    phone?: string | null;
+    role?: "ADMIN" | "USER";
+    accountType?: "JOB_SEEKER" | "JOB_POSTER" | "BOTH";
+    status?: "PENDING" | "ACTIVE" | "BLOCKED";
+    isVerified?: boolean;
+    isPhoneVerified?: boolean;
+  }
+) => {
+  const user = await prisma.user.findUnique({ where: { id } });
+  if (!user) throw new AppError(404, "User not found");
+
+  if (payload.email && payload.email !== user.email) {
+    const existing = await prisma.user.findUnique({ where: { email: payload.email } });
+    if (existing) throw new AppError(409, "Email is already in use");
+  }
+
+  const data = pick(payload, [
+    "name",
+    "email",
+    "phone",
+    "role",
+    "accountType",
+    "status",
+    "isVerified",
+    "isPhoneVerified",
+  ]);
+
+  return prisma.user.update({ where: { id }, data, select: safeUserSelect });
+};
+
+const deleteUser = async (id: string, actingUserId: string) => {
+  if (id === actingUserId) {
+    throw new AppError(400, "You cannot delete your own account");
+  }
+
+  const user = await prisma.user.findUnique({ where: { id } });
+  if (!user) throw new AppError(404, "User not found");
+
+  return prisma.user.delete({ where: { id }, select: { id: true, name: true, email: true } });
+};
+
+export const UserService = {
+  getAllUsers,
+  getSingleUser,
+  updateUserStatus,
+  updateUserWarnings,
+  updateUser,
+  deleteUser,
+};

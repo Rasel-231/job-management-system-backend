@@ -26,3 +26,14 @@ export const uploadBufferToCloudinary = (
     stream.end(file.buffer);
   });
 };
+
+// Compensating delete: when the DB write that follows an upload fails, call
+// this so we don't leak an orphaned blob into Cloudinary. Best-effort — a
+// failed destroy is swallowed, never an excuse for a 500.
+export const destroyCloudinaryAsset = async (publicId: string): Promise<void> => {
+  try {
+    await cloudinary.uploader.destroy(publicId);
+  } catch {
+    // ignore — cleanup is best-effort by design
+  }
+};

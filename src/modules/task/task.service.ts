@@ -3,7 +3,8 @@ import AppError from "../../utils/AppError";
 import pick from "../../utils/pick";
 import { isSeeker } from "../../config/permissions";
 import { calculatePagination, buildMeta, TPaginationOptions } from "../../utils/paginationHelper";
-import { uploadBufferToCloudinary } from "../../utils/cloudinaryUpload";
+import { uploadBufferToCloudinary, destroyCloudinaryAsset } from "../../utils/cloudinaryUpload";
+import { Prisma } from "../../generated/prisma/client";
 import { TApplyToJobPayload, TSubmitProofPayload, TTaskFilters } from "./task.interface";
 
 const taskInclude = {
@@ -58,33 +59,48 @@ const applyForJob = async (userId: string, payload: TApplyToJobPayload) => {
     throw new AppError(400, "You cannot apply to your own job");
   }
 
-  const active = await prisma.task.findFirst({
-    where: { jobId: payload.jobId, userId, status: { in: ["PENDING", "IN_PROGRESS", "SUBMITTED"] } },
+  // One application per user per job for the lifetime of the job — enforced
+  // both by this pre-check (friendly error) and a DB unique index (race-proof).
+  const existing = await prisma.task.findUnique({
+    where: { jobId_userId: { jobId: payload.jobId, userId } },
+    select: { id: true },
   });
-  if (active) throw new AppError(409, "You already have an active application for this job");
+  if (existing) throw new AppError(409, "You have already applied to this job");
 
-  return prisma.$transaction(async (tx) => {
-    const task = await tx.task.create({
-      data: { userId, jobId: payload.jobId, status: "PENDING", progress: 0 },
-    });
-
-    if (job.steps.length > 0) {
-      await tx.taskStep.createMany({
-        data: job.steps.map((s) => ({
-          taskId: task.id,
-          jobStepId: s.id,
-          title: s.title,
-          description: s.description,
-          order: s.order,
-        })),
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const task = await tx.task.create({
+        data: { userId, jobId: payload.jobId, status: "PENDING", progress: 0 },
       });
-    }
 
-    return tx.task.findUnique({
-      where: { id: task.id },
-      include: { job: { include: { postedBy: { select: { id: true, name: true } } } }, taskSteps: true },
+      if (job.steps.length > 0) {
+        await tx.taskStep.createMany({
+          data: job.steps.map((s) => ({
+            taskId: task.id,
+            jobStepId: s.id,
+            title: s.title,
+            description: s.description,
+            order: s.order,
+          })),
+        });
+      }
+
+      return tx.task.findUnique({
+        where: { id: task.id },
+        include: {
+          job: { include: { postedBy: { select: { id: true, name: true } } } },
+          taskSteps: true,
+        },
+      });
     });
-  });
+  } catch (err) {
+    // Two parallel requests can slip past the pre-check; the unique index is
+    // the final say. Surface a clean 409 instead of a raw DB error.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      throw new AppError(409, "You have already applied to this job");
+    }
+    throw err;
+  }
 };
 
 // 2) Poster accepts the application → application starts, progress bar unlocks.
@@ -164,26 +180,33 @@ const submitProof = async (
   }
 
   let proofFileUrl: string | undefined;
+  let uploadedPublicId: string | undefined;
   if (file) {
     const uploaded = await uploadBufferToCloudinary(file, "job-management/task-proofs");
     proofFileUrl = uploaded.url;
+    uploadedPublicId = uploaded.publicId;
   }
   if (!payload.submissionLink && !proofFileUrl && !payload.proofNote) {
     throw new AppError(400, "Provide a submission link, proof file, or proof note");
   }
 
-  return prisma.task.update({
-    where: { id: taskId },
-    data: {
-      submissionLink: payload.submissionLink ?? task.submissionLink,
-      proofNote: payload.proofNote ?? task.proofNote,
-      proofFileUrl: proofFileUrl ?? task.proofFileUrl,
-      status: "SUBMITTED",
-      submittedAt: new Date(),
-      progress: task.progress === 0 && !hasSteps ? 100 : task.progress,
-    },
-    include: taskInclude,
-  });
+  try {
+    return await prisma.task.update({
+      where: { id: taskId },
+      data: {
+        submissionLink: payload.submissionLink ?? task.submissionLink,
+        proofNote: payload.proofNote ?? task.proofNote,
+        proofFileUrl: proofFileUrl ?? task.proofFileUrl,
+        status: "SUBMITTED",
+        submittedAt: new Date(),
+        progress: task.progress === 0 && !hasSteps ? 100 : task.progress,
+      },
+      include: taskInclude,
+    });
+  } catch (err) {
+    if (uploadedPublicId) await destroyCloudinaryAsset(uploadedPublicId);
+    throw err;
+  }
 };
 
 // 5) Poster (or admin) reviews — approve credits the wallet atomically.
@@ -251,27 +274,35 @@ const getAllTasks = async (query: Record<string, unknown>) => {
   return { meta: buildMeta(page, limit, total), data: tasks };
 };
 
-const getMyTasks = async (userId: string) => {
-  return prisma.task.findMany({
-    where: { userId },
-    include: taskInclude,
-    orderBy: { updatedAt: "desc" },
-  });
+// Bounded, pageable reads so a popular poster's inbox can't balloon into an
+// unbounded payload. Meta doubles as the UI's "load more" driver.
+const getMyTasks = async (userId: string, query: Record<string, unknown>) => {
+  const { page, limit, skip } = calculatePagination(pick(query, ["page", "limit"]) as TPaginationOptions);
+  const where = { userId };
+  const [tasks, total] = await Promise.all([
+    prisma.task.findMany({ where, include: taskInclude, orderBy: { updatedAt: "desc" }, skip, take: limit }),
+    prisma.task.count({ where }),
+  ]);
+
+  return { meta: buildMeta(page, limit, total), data: tasks };
 };
 
 // Applications for one of MY posted jobs (poster dashboards).
-const getJobApplications = async (jobId: string, userId: string, role: string) => {
+const getJobApplications = async (jobId: string, userId: string, role: string, query: Record<string, unknown>) => {
   const job = await prisma.job.findUnique({ where: { id: jobId } });
   if (!job) throw new AppError(404, "Job not found");
   if (role !== "ADMIN" && job.postedById !== userId) {
     throw new AppError(403, "You can only view applications for your own jobs");
   }
 
-  return prisma.task.findMany({
-    where: { jobId },
-    include: taskInclude,
-    orderBy: { createdAt: "desc" },
-  });
+  const { page, limit, skip } = calculatePagination(pick(query, ["page", "limit"]) as TPaginationOptions);
+  const where = { jobId };
+  const [tasks, total] = await Promise.all([
+    prisma.task.findMany({ where, include: taskInclude, orderBy: { createdAt: "desc" }, skip, take: limit }),
+    prisma.task.count({ where }),
+  ]);
+
+  return { meta: buildMeta(page, limit, total), data: tasks };
 };
 
 const getSingleTask = async (id: string, userId: string, role: string) => {

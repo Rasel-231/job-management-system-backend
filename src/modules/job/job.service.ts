@@ -4,7 +4,7 @@ import pick from "../../utils/pick";
 import { isPoster } from "../../config/permissions";
 import { buildWhereClause } from "../../utils/queryBuilder";
 import { calculatePagination, buildMeta, TPaginationOptions } from "../../utils/paginationHelper";
-import { uploadBufferToCloudinary } from "../../utils/cloudinaryUpload";
+import { uploadBufferToCloudinary, destroyCloudinaryAsset } from "../../utils/cloudinaryUpload";
 import { TCreateJobPayload, TJobFilters, TJobStepInput, TUpdateJobPayload } from "./job.interface";
 
 const searchableFields = ["title", "description"];
@@ -131,42 +131,56 @@ const createJob = async (
   await assertPoster(postedById);
 
   let imageUrl: string | undefined;
+  let uploadedPublicId: string | undefined;
   if (file) {
     const uploaded = await uploadBufferToCloudinary(file, "job-management/jobs");
     imageUrl = uploaded.url;
+    uploadedPublicId = uploaded.publicId;
   }
 
   const steps = parseSteps(payload.steps);
   const deadline = payload.deadline ? new Date(payload.deadline) : null;
 
-  return prisma.$transaction(async (tx) => {
-    const job = await tx.job.create({
-      data: {
-        title: payload.title,
-        description: payload.description,
-        requirements: payload.requirements ?? null,
-        proofRequirements: payload.proofRequirements,
-        reward: payload.reward,
-        category: payload.category as never,
-        deadline,
-        imageUrl,
-        postedById,
-      },
-    });
+  // multipart/form-data দিয়ে আসা সব field string থাকে, তাই reward-কে সরাসরি Number() করে নিতে হবে
+  const reward = Number(payload.reward);
+  if (Number.isNaN(reward)) {
+    throw new AppError(400, "Reward must be a valid number");
+  }
 
-    if (steps.length > 0) {
-      await tx.jobStep.createMany({
-        data: steps.map((step, i) => ({
-          jobId: job.id,
-          title: step.title,
-          description: step.description,
-          order: i,
-        })),
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const job = await tx.job.create({
+        data: {
+          title: payload.title,
+          description: payload.description,
+          requirements: payload.requirements ?? null,
+          proofRequirements: payload.proofRequirements,
+          reward,
+          category: payload.category as never,
+          deadline,
+          imageUrl,
+          postedById,
+        },
       });
-    }
 
-    return tx.job.findUnique({ where: { id: job.id }, include: { steps: true } });
-  });
+      if (steps.length > 0) {
+        await tx.jobStep.createMany({
+          data: steps.map((step, i) => ({
+            jobId: job.id,
+            title: step.title,
+            description: step.description,
+            order: i,
+          })),
+        });
+      }
+
+      return tx.job.findUnique({ where: { id: job.id }, include: { steps: true } });
+    });
+  } catch (err) {
+    // DB write failed → don't leave an orphaned image on Cloudinary.
+    if (uploadedPublicId) await destroyCloudinaryAsset(uploadedPublicId);
+    throw err;
+  }
 };
 
 const updateJob = async (
@@ -182,42 +196,61 @@ const updateJob = async (
     throw new AppError(403, "You can only update your own jobs");
   }
 
-  const { steps, deadline, category, ...rest } = payload;
+  const { steps, deadline, category, reward, ...rest } = payload;
 
   let imageUrl = job.imageUrl;
+  let uploadedPublicId: string | undefined;
   if (file) {
     const uploaded = await uploadBufferToCloudinary(file, "job-management/jobs");
     imageUrl = uploaded.url;
+    uploadedPublicId = uploaded.publicId;
   }
 
   const stepsToSync = parseSteps(steps);
 
-  return prisma.$transaction(async (tx) => {
-    const updated = await tx.job.update({
-      where: { id },
-      data: {
-        ...rest,
-        ...(category && { category: category as never }),
-        ...(deadline !== undefined && deadline !== null && { deadline: new Date(deadline) }),
-        ...(deadline === null && { deadline: null }),
-        imageUrl,
-      },
-    });
-
-    if (stepsToSync.length > 0) {
-      await tx.jobStep.deleteMany({ where: { jobId: id } });
-      await tx.jobStep.createMany({
-        data: stepsToSync.map((s, i) => ({
-          jobId: id,
-          title: s.title,
-          description: s.description,
-          order: i,
-        })),
-      });
+  // reward পাঠানো হলে সেটাও string আসতে পারে, তাই এখানেও convert করা লাগবে
+  let parsedReward: number | undefined;
+  if (reward !== undefined) {
+    parsedReward = Number(reward);
+    if (Number.isNaN(parsedReward)) {
+      throw new AppError(400, "Reward must be a valid number");
     }
+  }
 
-    return tx.job.findUnique({ where: { id }, include: { steps: { orderBy: { order: "asc" } } } });
-  });
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const updated = await tx.job.update({
+        where: { id },
+        data: {
+          ...rest,
+          ...(parsedReward !== undefined && { reward: parsedReward }),
+          ...(category && { category: category as never }),
+          ...(deadline !== undefined && deadline !== null && { deadline: new Date(deadline) }),
+          ...(deadline === null && { deadline: null }),
+          imageUrl,
+        },
+      });
+
+      if (stepsToSync.length > 0) {
+        await tx.jobStep.deleteMany({ where: { jobId: id } });
+        await tx.jobStep.createMany({
+          data: stepsToSync.map((s, i) => ({
+            jobId: id,
+            title: s.title,
+            description: s.description,
+            order: i,
+          })),
+        });
+      }
+
+      return tx.job.findUnique({ where: { id }, include: { steps: { orderBy: { order: "asc" } } } });
+    });
+  } catch (err) {
+    // Only the freshly uploaded replacement is rolled back; the previous
+    // image (if any) is still referenced by the unchanged DB row.
+    if (uploadedPublicId) await destroyCloudinaryAsset(uploadedPublicId);
+    throw err;
+  }
 };
 
 const deleteJob = async (id: string, userId: string, role: string): Promise<null> => {
@@ -276,18 +309,26 @@ const getComments = async (jobId: string, page = 1, limit = 20) => {
 };
 
 // Job Poster dashboard — own posts along with application stats.
-const getMyJobs = async (userId: string) => {
-  return prisma.job.findMany({
-    where: { postedById: userId },
-    include: {
-      steps: { select: { id: true }, orderBy: { order: "asc" } },
-      _count: { select: { tasks: true, likes: true, comments: true } },
-      tasks: {
-        select: { status: true },
+const getMyJobs = async (userId: string, query: Record<string, unknown>) => {
+  const { page, limit, skip } = calculatePagination(pick(query, ["page", "limit"]) as TPaginationOptions);
+  const where = { postedById: userId };
+
+  const [jobs, total] = await Promise.all([
+    prisma.job.findMany({
+      where,
+      include: {
+        steps: { select: { id: true }, orderBy: { order: "asc" } },
+        _count: { select: { tasks: true, likes: true, comments: true } },
+        tasks: { select: { status: true } },
       },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+      orderBy: { createdAt: "desc" },
+      skip,
+      take: limit,
+    }),
+    prisma.job.count({ where }),
+  ]);
+
+  return { meta: buildMeta(page, limit, total), data: jobs };
 };
 
 export const JobService = {

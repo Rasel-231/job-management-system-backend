@@ -1,7 +1,7 @@
 import prisma from "../../config/db";
 import AppError from "../../utils/AppError";
 import pick from "../../utils/pick";
-import { uploadBufferToCloudinary } from "../../utils/cloudinaryUpload";
+import { uploadBufferToCloudinary, destroyCloudinaryAsset } from "../../utils/cloudinaryUpload";
 import { calculatePagination, buildMeta, TPaginationOptions } from "../../utils/paginationHelper";
 import { TCreateVerificationPayload, TVerificationFilters } from "./verification.interface";
 
@@ -17,20 +17,26 @@ const submitVerification = async (
   });
   if (pending) throw new AppError(409, "You already have a pending verification request");
 
-  const uploaded = await uploadBufferToCloudinary(file, "job-management/verifications");
-  const documentUrl = uploaded.url;
-
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new AppError(404, "User not found");
 
-  return prisma.verificationRequest.create({
-    data: {
-      userId,
-      type: payload.type,
-      documentUrl,
-      documentNumber: payload.documentNumber,
-    },
-  });
+  const uploaded = await uploadBufferToCloudinary(file, "job-management/verifications");
+  const documentUrl = uploaded.url;
+  const uploadedPublicId = uploaded.publicId;
+
+  try {
+    return await prisma.verificationRequest.create({
+      data: {
+        userId,
+        type: payload.type,
+        documentUrl,
+        documentNumber: payload.documentNumber,
+      },
+    });
+  } catch (err) {
+    await destroyCloudinaryAsset(uploadedPublicId);
+    throw err;
+  }
 };
 
 const getMyVerifications = async (userId: string) => {

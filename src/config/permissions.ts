@@ -1,6 +1,8 @@
 export enum Permission {
   USER_VIEW_ALL = "user:view_all",
   USER_UPDATE_STATUS = "user:update_status",
+  USER_UPDATE = "user:update",
+  USER_DELETE = "user:delete",
 
   JOB_CREATE = "job:create",
   JOB_UPDATE = "job:update",
@@ -37,6 +39,8 @@ export const RolePermissions: Record<string, Permission[]> = {
   ADMIN: [
     Permission.USER_VIEW_ALL,
     Permission.USER_UPDATE_STATUS,
+    Permission.USER_UPDATE,
+    Permission.USER_DELETE,
     Permission.JOB_CREATE,
     Permission.JOB_UPDATE,
     Permission.JOB_DELETE,

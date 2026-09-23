@@ -1,5 +1,6 @@
 import type { CookieOptions, Response } from "express";
 import { env } from "./config";
+import { parseExpiresInToMs, ACCESS_TOKEN_FALLBACK_MS, REFRESH_TOKEN_FALLBACK_MS } from "../utils/duration";
 
 // Centralized cookie policy — single source of truth for auth cookies so the
 // security attributes (httpOnly/sameSite/secure) are never drifted per route.
@@ -11,7 +12,8 @@ export const accessTokenCookieOptions: CookieOptions = {
   secure: isProd,
   sameSite: strict,
   path: "/",
-  maxAge: 15 * 60 * 1000,
+  // Derived from the exact access-token expiry so cookies and tokens expire together.
+  maxAge: parseExpiresInToMs(env.JWT_ACCESS_EXPIRES_IN, ACCESS_TOKEN_FALLBACK_MS),
 };
 
 export const refreshTokenCookieOptions: CookieOptions = {
@@ -19,7 +21,7 @@ export const refreshTokenCookieOptions: CookieOptions = {
   secure: isProd,
   sameSite: strict,
   path: "/",
-  maxAge: 30 * 24 * 60 * 60 * 1000,
+  maxAge: parseExpiresInToMs(env.JWT_REFRESH_EXPIRES_IN, REFRESH_TOKEN_FALLBACK_MS),
 };
 
 export const roleCookieOptions: CookieOptions = {

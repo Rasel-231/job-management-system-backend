@@ -68,12 +68,16 @@ const createDispute = async (userId: string, payload: TCreateDisputePayload) => 
   });
 };
 
-const getMyDisputes = async (userId: string) => {
-  return prisma.dispute.findMany({
-    where: { OR: [{ complainantId: userId }, { respondentId: userId }] },
-    include: disputeInclude,
-    orderBy: { createdAt: "desc" },
-  });
+const getMyDisputes = async (userId: string, query: Record<string, unknown>) => {
+  const { page, limit, skip } = calculatePagination(pick(query, ["page", "limit"]) as TPaginationOptions);
+  const where = { OR: [{ complainantId: userId }, { respondentId: userId }] };
+
+  const [disputes, total] = await Promise.all([
+    prisma.dispute.findMany({ where, include: disputeInclude, orderBy: { createdAt: "desc" }, skip, take: limit }),
+    prisma.dispute.count({ where }),
+  ]);
+
+  return { meta: buildMeta(page, limit, total), data: disputes };
 };
 
 const getAllDisputes = async (query: Record<string, unknown>) => {

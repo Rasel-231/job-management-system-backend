@@ -26,4 +26,14 @@ router.patch(
   UserController.updateUserWarnings
 );
 
+router.patch(
+  "/:id",
+  authenticate,
+  authorize(Permission.USER_UPDATE),
+  validateRequest(UserValidation.updateUserValidationSchema),
+  UserController.updateUser
+);
+
+router.delete("/:id", authenticate, authorize(Permission.USER_DELETE), UserController.deleteUser);
+
 export const UserRoutes = router;

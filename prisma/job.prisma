@@ -36,7 +36,7 @@ model Job {
   deadline          DateTime?
   status            JobStatus     @default(OPEN)
   imageUrl          String?
-  postedBy          User          @relation("PostedJobs", fields: [postedById], references: [id])
+  postedBy          User          @relation("PostedJobs", fields: [postedById], references: [id], onDelete: Cascade)
   postedById        String
   tasks             Task[]
   steps             JobStep[]
@@ -71,7 +71,7 @@ model JobLike {
   id        String   @id @default(uuid())
   job       Job      @relation(fields: [jobId], references: [id])
   jobId     String
-  user      User     @relation(fields: [userId], references: [id])
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId    String
   createdAt DateTime @default(now())
 
@@ -84,7 +84,7 @@ model JobComment {
   id        String   @id @default(uuid())
   job       Job      @relation(fields: [jobId], references: [id])
   jobId     String
-  user      User     @relation(fields: [userId], references: [id])
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId    String
   content   String
   createdAt DateTime @default(now())

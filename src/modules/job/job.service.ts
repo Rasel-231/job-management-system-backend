@@ -3,9 +3,10 @@ import AppError from "../../utils/AppError";
 import pick from "../../utils/pick";
 import { isPoster } from "../../config/permissions";
 import { buildWhereClause } from "../../utils/queryBuilder";
-import { calculatePagination, buildMeta, TPaginationOptions } from "../../utils/paginationHelper";
+import { calculatePagination, buildMeta } from "../../utils/paginationHelper";
 import { uploadBufferToCloudinary, destroyCloudinaryAsset } from "../../utils/cloudinaryUpload";
 import { TCreateJobPayload, TJobFilters, TJobStepInput, TUpdateJobPayload } from "./job.interface";
+import { TPaginationOptions } from "../../types/apiResponse";
 
 const searchableFields = ["title", "description"];
 
@@ -43,7 +44,11 @@ const getAllJobs = async (query: Record<string, unknown>, viewerId?: string) => 
   const paginationOptions = pick(query, ["page", "limit", "sortBy", "sortOrder"]) as TPaginationOptions;
 
   const { searchTerm, ...restFilters } = filters;
-  const where = buildWhereClause({ searchTerm, searchableFields, filters: restFilters });
+  const where = buildWhereClause({
+    searchTerm,
+    searchableFields: searchableFields as never,
+    filters: restFilters,
+  });
   const { page, limit, skip, sortBy, sortOrder } = calculatePagination(paginationOptions);
 
   const orderBy =
